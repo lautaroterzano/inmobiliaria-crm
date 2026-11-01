@@ -201,6 +201,103 @@ export async function loadMessages(sessionId: string): Promise<StoredMessage[]> 
       .order("created_at", { ascending: true });
 
     if (!error && data) {
+      return data as StoredMessage[];
+    }
+  }
+
+  if (typeof window !== "undefined") {
+    try {
+      const cached = localStorage.getItem(`fiore_chat_${sessionId}`);
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+}
+
+export async function saveMessage(msg: StoredMessage): Promise<void> {
+  if (typeof window !== "undefined") {
+    try {
+      const key = `fiore_chat_${msg.session_id}`;
+      const existing: StoredMessage[] = JSON.parse(
+        localStorage.getItem(key) || "[]"
+      );
+      const exists = existing.some((m) => m.id === msg.id);
+      if (!exists) {
+        existing.push({
+          ...msg,
+          created_at: msg.created_at || new Date().toISOString(),
+        });
+        localStorage.setItem(key, JSON.stringify(existing));
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  if (supabase) {
+    await supabase.from("fiore_messages").upsert(
+      {
+        id: msg.id,
+        session_id: msg.session_id,
+        role: msg.role,
+        content: msg.content,
+      },
+      { onConflict: "id" }
+    );
+  }
+}
+
+export async function clearSessionMessages(sessionId: string): Promise<void> {
+  if (typeof window !== "undefined") {
+    localStorage.removeItem(`fiore_chat_${sessionId}`);
+  }
+
+  if (supabase) {
+    await supabase.from("fiore_messages").delete().eq("session_id", sessionId);
+  }
+}
+
+// ============================================================================
+// FUNCIONES MINI CRM MULTI-AGENTE
+// ============================================================================
+
+function getLocalContacts(): CRMContact[] {
+  if (typeof window === "undefined") return INITIAL_DEMO_CONTACTS;
+  try {
+    const raw = localStorage.getItem(LOCAL_CONTACTS_KEY);
+    if (!raw) {
+      localStorage.setItem(
+        LOCAL_CONTACTS_KEY,
+        JSON.stringify(INITIAL_DEMO_CONTACTS)
+      );
+      return INITIAL_DEMO_CONTACTS;
+    }
+    return (JSON.parse(raw) as Record<string, unknown>[]).map(unpackContactRow);
+  } catch {
+    return INITIAL_DEMO_CONTACTS;
+  }
+}
+
+function setLocalContacts(contacts: CRMContact[]) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(LOCAL_CONTACTS_KEY, JSON.stringify(contacts));
+  } catch {
+    // ignore
+  }
+}
+
+export async function loadCRMContacts(): Promise<CRMContact[]> {
+  if (supabase) {
+    const { data, error } = await supabase
+      .from("contacts")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (!error && data) {
       const unpacked = (data as Record<string, unknown>[]).map(
         unpackContactRow
       );
