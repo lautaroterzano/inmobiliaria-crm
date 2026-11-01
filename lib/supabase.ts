@@ -290,6 +290,13 @@ function setLocalContacts(contacts: CRMContact[]) {
   }
 }
 
+const LEGACY_DEMO_IDS = new Set([
+  "11111111-1111-4111-8111-111111111101",
+  "11111111-1111-4111-8111-111111111102",
+  "11111111-1111-4111-8111-111111111103",
+  "11111111-1111-4111-8111-111111111104",
+]);
+
 export async function loadCRMContacts(): Promise<CRMContact[]> {
   if (supabase) {
     const { data, error } = await supabase
@@ -298,15 +305,24 @@ export async function loadCRMContacts(): Promise<CRMContact[]> {
       .order("created_at", { ascending: false });
 
     if (!error && data) {
-      const unpacked = (data as Record<string, unknown>[]).map(
-        unpackContactRow
-      );
+      const allRows = (data as Record<string, unknown>[]).map(unpackContactRow);
+      const demoFound = allRows.filter((c) => LEGACY_DEMO_IDS.has(c.id));
+      if (demoFound.length > 0) {
+        await supabase
+          .from("contacts")
+          .delete()
+          .in(
+            "id",
+            demoFound.map((d) => d.id)
+          );
+      }
+      const unpacked = allRows.filter((c) => !LEGACY_DEMO_IDS.has(c.id));
       setLocalContacts(unpacked);
       return unpacked;
     }
   }
 
-  return getLocalContacts();
+  return getLocalContacts().filter((c) => !LEGACY_DEMO_IDS.has(c.id));
 }
 
 export async function createCRMContact(input: {

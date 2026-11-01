@@ -64,7 +64,7 @@ export function CRMView({
   onGoToTemplates,
 }: CRMViewProps) {
   // Filtro: "mine" (Solo mis contactos) vs "all" (Todos los del equipo)
-  const [ownerFilter, setOwnerFilter] = useState<"mine" | "all">("mine");
+  const [ownerFilter, setOwnerFilter] = useState<"mine" | "all">("all");
   const [activeFunnel, setActiveFunnel] = useState<ContactType>("seller");
   const [selectedStageFilter, setSelectedStageFilter] = useState<
     ContactStage | "all"
