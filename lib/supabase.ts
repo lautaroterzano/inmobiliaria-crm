@@ -57,7 +57,7 @@ export interface CRMContact {
   created_at: string;
 }
 
-const LOCAL_CONTACTS_KEY = "fiore_crm_contacts_v3";
+const LOCAL_CONTACTS_KEY = "fiore_crm_contacts_v4";
 const LOCAL_AGENTS_KEY = "fiore_crm_agents_v1";
 const ACTIVE_AGENT_KEY = "fiore_active_agent_id_v1";
 
@@ -264,20 +264,44 @@ export async function clearSessionMessages(sessionId: string): Promise<void> {
 // FUNCIONES MINI CRM MULTI-AGENTE
 // ============================================================================
 
+const LEGACY_DEMO_NAMES = new Set([
+  "Mart?n G?mez",
+  "Luc?a Fern?ndez",
+  "Santiago Pereyra",
+  "Valeria y Tom?s",
+]);
+
+function isDemoContact(c: { id?: string; name?: string }): boolean {
+  return Boolean(
+    (c.id && LEGACY_DEMO_IDS.has(c.id)) ||
+      (c.name && LEGACY_DEMO_NAMES.has(c.name.trim()))
+  );
+}
+
+function purgeOldLocalStorageKeys() {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem("fiore_crm_contacts_v1");
+    localStorage.removeItem("fiore_crm_contacts_v2");
+    localStorage.removeItem("fiore_crm_contacts_v3");
+    localStorage.removeItem("fiore_marketing_plan_v1_fiorella");
+    localStorage.removeItem("fiore_marketing_plan_v1_camila");
+  } catch {
+    // ignore
+  }
+}
+
 function getLocalContacts(): CRMContact[] {
-  if (typeof window === "undefined") return INITIAL_DEMO_CONTACTS;
+  if (typeof window === "undefined") return [];
+  purgeOldLocalStorageKeys();
   try {
     const raw = localStorage.getItem(LOCAL_CONTACTS_KEY);
-    if (!raw) {
-      localStorage.setItem(
-        LOCAL_CONTACTS_KEY,
-        JSON.stringify(INITIAL_DEMO_CONTACTS)
-      );
-      return INITIAL_DEMO_CONTACTS;
-    }
-    return (JSON.parse(raw) as Record<string, unknown>[]).map(unpackContactRow);
+    if (!raw) return [];
+    return (JSON.parse(raw) as Record<string, unknown>[])
+      .map(unpackContactRow)
+      .filter((c) => !isDemoContact(c));
   } catch {
-    return INITIAL_DEMO_CONTACTS;
+    return [];
   }
 }
 
@@ -305,8 +329,9 @@ export async function loadCRMContacts(): Promise<CRMContact[]> {
       .order("created_at", { ascending: false });
 
     if (!error && data) {
+      purgeOldLocalStorageKeys();
       const allRows = (data as Record<string, unknown>[]).map(unpackContactRow);
-      const demoFound = allRows.filter((c) => LEGACY_DEMO_IDS.has(c.id));
+      const demoFound = allRows.filter((c) => isDemoContact(c));
       if (demoFound.length > 0) {
         await supabase
           .from("contacts")
@@ -316,7 +341,7 @@ export async function loadCRMContacts(): Promise<CRMContact[]> {
             demoFound.map((d) => d.id)
           );
       }
-      const unpacked = allRows.filter((c) => !LEGACY_DEMO_IDS.has(c.id));
+      const unpacked = allRows.filter((c) => !isDemoContact(c));
       setLocalContacts(unpacked);
       return unpacked;
     }
@@ -466,7 +491,7 @@ export interface MarketingPlanItem {
   updated_at: string;
 }
 
-const LOCAL_PLAN_PREFIX = "fiore_marketing_plan_v1_";
+const LOCAL_PLAN_PREFIX = "fiore_marketing_plan_v2_";
 
 export function buildSellerPlanTemplate(
   contact: CRMContact,
@@ -549,9 +574,20 @@ export function buildSellerPlanTemplate(
   }
 }
 
+function isDemoPlanItem(item: MarketingPlanItem): boolean {
+  if (item.contact_id && LEGACY_DEMO_IDS.has(item.contact_id)) return true;
+  if (item.contact_name && LEGACY_DEMO_NAMES.has(item.contact_name.trim()))
+    return true;
+  for (const demoName of LEGACY_DEMO_NAMES) {
+    if (item.title?.includes(demoName)) return true;
+  }
+  return false;
+}
+
 export async function loadMarketingPlan(
   agentId: string
 ): Promise<MarketingPlanItem[]> {
+  purgeOldLocalStorageKeys();
   const storageKey = `${LOCAL_PLAN_PREFIX}${agentId}`;
   const dbRowId = `__marketing_plan_${agentId}__`;
 
@@ -566,10 +602,14 @@ export async function loadMarketingPlan(
       try {
         const parsed = JSON.parse(data.content) as MarketingPlanItem[];
         if (Array.isArray(parsed)) {
-          if (typeof window !== "undefined") {
-            localStorage.setItem(storageKey, JSON.stringify(parsed));
+          const cleaned = parsed.filter((item) => !isDemoPlanItem(item));
+          if (cleaned.length !== parsed.length) {
+            await saveMarketingPlan(agentId, cleaned);
           }
-          return parsed;
+          if (typeof window !== "undefined") {
+            localStorage.setItem(storageKey, JSON.stringify(cleaned));
+          }
+          return cleaned;
         }
       } catch {
         // ignore
@@ -581,7 +621,9 @@ export async function loadMarketingPlan(
     try {
       const cached = localStorage.getItem(storageKey);
       if (cached) {
-        return JSON.parse(cached) as MarketingPlanItem[];
+        return (JSON.parse(cached) as MarketingPlanItem[]).filter(
+          (item) => !isDemoPlanItem(item)
+        );
       }
     } catch {
       // ignore
