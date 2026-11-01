@@ -57,7 +57,7 @@ export interface CRMContact {
   created_at: string;
 }
 
-const LOCAL_CONTACTS_KEY = "fiore_crm_contacts_v2";
+const LOCAL_CONTACTS_KEY = "fiore_crm_contacts_v3";
 const LOCAL_AGENTS_KEY = "fiore_crm_agents_v1";
 const ACTIVE_AGENT_KEY = "fiore_active_agent_id_v1";
 
@@ -105,60 +105,7 @@ function unpackContactRow(row: Record<string, unknown>): CRMContact {
   };
 }
 
-const INITIAL_DEMO_CONTACTS: CRMContact[] = [
-  {
-    id: "11111111-1111-4111-8111-111111111101",
-    name: "Martín Gómez",
-    phone: "5491145678901",
-    type: "seller",
-    stage: "tasacion_pendiente",
-    notes:
-      "Dueño directo 3 amb con balcón terraza en Caballito (Pedro Goyena). Quiere tasar esta semana.",
-    agent_id: "fiorella",
-    agent_name: "Fiorella",
-    last_message_sent_at: null,
-    created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
-  },
-  {
-    id: "11111111-1111-4111-8111-111111111102",
-    name: "Lucía Fernández",
-    phone: "5491156789012",
-    type: "seller",
-    stage: "en_promocion",
-    notes:
-      "PH 4 amb en Palermo Hollywood. Autorización firmada, Reel publicado en IG.",
-    agent_id: "fiorella",
-    agent_name: "Fiorella",
-    last_message_sent_at: new Date(Date.now() - 3600000 * 5).toISOString(),
-    created_at: new Date(Date.now() - 86400000 * 6).toISOString(),
-  },
-  {
-    id: "11111111-1111-4111-8111-111111111103",
-    name: "Santiago Pereyra",
-    phone: "5491167890123",
-    type: "buyer",
-    stage: "visita_agendada",
-    notes:
-      "Busca 2 amb luminoso primera vivienda en Belgrano / Núñez. Presupuesto USD 115.000 efectivo.",
-    agent_id: "fiorella",
-    agent_name: "Fiorella",
-    last_message_sent_at: null,
-    created_at: new Date(Date.now() - 86400000 * 1).toISOString(),
-  },
-  {
-    id: "11111111-1111-4111-8111-111111111104",
-    name: "Valeria y Tomás",
-    phone: "5491134567890",
-    type: "buyer",
-    stage: "calificado",
-    notes:
-      "Familia buscando casa o PH 4 amb con patio en Villa Urquiza / Coghlan. Hasta USD 240.000.",
-    agent_id: "camila",
-    agent_name: "Amiga / Socia",
-    last_message_sent_at: null,
-    created_at: new Date(Date.now() - 86400000 * 3).toISOString(),
-  },
-];
+const INITIAL_DEMO_CONTACTS: CRMContact[] = [];
 
 // ============================================================================
 // GESTIÓN DE PERFILES MULTI-AGENTE (SINCRONIZADO EN SUPABASE + LOCAL)
@@ -254,132 +201,11 @@ export async function loadMessages(sessionId: string): Promise<StoredMessage[]> 
       .order("created_at", { ascending: true });
 
     if (!error && data) {
-      return data as StoredMessage[];
-    }
-  }
-
-  if (typeof window !== "undefined") {
-    try {
-      const cached = localStorage.getItem(`fiore_chat_${sessionId}`);
-      return cached ? JSON.parse(cached) : [];
-    } catch {
-      return [];
-    }
-  }
-
-  return [];
-}
-
-export async function saveMessage(msg: StoredMessage): Promise<void> {
-  if (typeof window !== "undefined") {
-    try {
-      const key = `fiore_chat_${msg.session_id}`;
-      const existing: StoredMessage[] = JSON.parse(
-        localStorage.getItem(key) || "[]"
+      const unpacked = (data as Record<string, unknown>[]).map(
+        unpackContactRow
       );
-      const exists = existing.some((m) => m.id === msg.id);
-      if (!exists) {
-        existing.push({
-          ...msg,
-          created_at: msg.created_at || new Date().toISOString(),
-        });
-        localStorage.setItem(key, JSON.stringify(existing));
-      }
-    } catch {
-      // ignore
-    }
-  }
-
-  if (supabase) {
-    await supabase.from("fiore_messages").upsert(
-      {
-        id: msg.id,
-        session_id: msg.session_id,
-        role: msg.role,
-        content: msg.content,
-      },
-      { onConflict: "id" }
-    );
-  }
-}
-
-export async function clearSessionMessages(sessionId: string): Promise<void> {
-  if (typeof window !== "undefined") {
-    localStorage.removeItem(`fiore_chat_${sessionId}`);
-  }
-
-  if (supabase) {
-    await supabase.from("fiore_messages").delete().eq("session_id", sessionId);
-  }
-}
-
-// ============================================================================
-// FUNCIONES MINI CRM MULTI-AGENTE
-// ============================================================================
-
-function getLocalContacts(): CRMContact[] {
-  if (typeof window === "undefined") return INITIAL_DEMO_CONTACTS;
-  try {
-    const raw = localStorage.getItem(LOCAL_CONTACTS_KEY);
-    if (!raw) {
-      localStorage.setItem(
-        LOCAL_CONTACTS_KEY,
-        JSON.stringify(INITIAL_DEMO_CONTACTS)
-      );
-      return INITIAL_DEMO_CONTACTS;
-    }
-    return (JSON.parse(raw) as Record<string, unknown>[]).map(unpackContactRow);
-  } catch {
-    return INITIAL_DEMO_CONTACTS;
-  }
-}
-
-function setLocalContacts(contacts: CRMContact[]) {
-  if (typeof window === "undefined") return;
-  try {
-    localStorage.setItem(LOCAL_CONTACTS_KEY, JSON.stringify(contacts));
-  } catch {
-    // ignore
-  }
-}
-
-export async function loadCRMContacts(): Promise<CRMContact[]> {
-  if (supabase) {
-    const { data, error } = await supabase
-      .from("contacts")
-      .select("*")
-      .order("created_at", { ascending: false });
-
-    if (!error && data) {
-      if (data.length > 0) {
-        const unpacked = (data as Record<string, unknown>[]).map(
-          unpackContactRow
-        );
-        setLocalContacts(unpacked);
-        return unpacked;
-      }
-      // Sembrar contactos iniciales
-      const rowsToInsert = INITIAL_DEMO_CONTACTS.map((c) => ({
-        id: c.id,
-        name: c.name,
-        phone: c.phone,
-        type: c.type,
-        stage: c.stage,
-        notes: packNotesWithAgent(c.notes, c.agent_id, c.agent_name),
-        last_message_sent_at: c.last_message_sent_at,
-        created_at: c.created_at,
-      }));
-      const { data: seeded, error: seedErr } = await supabase
-        .from("contacts")
-        .upsert(rowsToInsert, { onConflict: "id" })
-        .select("*");
-      if (!seedErr && seeded) {
-        const unpacked = (seeded as Record<string, unknown>[]).map(
-          unpackContactRow
-        );
-        setLocalContacts(unpacked);
-        return unpacked;
-      }
+      setLocalContacts(unpacked);
+      return unpacked;
     }
   }
 
