@@ -5,6 +5,11 @@ export const metadata: Metadata = {
   title: "Agente Inmobiliario | Asistente & CRM CABA",
   description:
     "Asistente móvil de marketing, Reels, TikTok, WhatsApp y Mini CRM para agentes inmobiliarios en CABA.",
+  icons: {
+    icon: "/icon-192.png",
+    shortcut: "/icon-192.png",
+    apple: "/icon-192.png",
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",

@@ -7,3 +7,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
 
 <!-- END:nextjs-agent-rules -->
+
+## Reglas del Proyecto (Agente Inmobiliario)
+
+- **Auto-Push a Git al finalizar cada tarea:** Siempre que termines una tarea que modifique código o archivos del proyecto, hacé `git add`, `git commit` y `git push origin main` automáticamente sin esperar a que el usuario lo pida explícitamente (recordá agregar `C:\Program Files\Git\cmd` y `C:\Program Files\nodejs` al `PATH` en PowerShell).
