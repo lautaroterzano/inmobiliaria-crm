@@ -7,6 +7,7 @@ import {
   CalendarPlus,
   Clock,
   ExternalLink,
+  FileEdit,
   MessageSquareShare,
   Phone,
   Plus,
@@ -40,22 +41,27 @@ import {
   normalizePhoneForWhatsApp,
   type ContactStage,
   type ContactType,
+  type WhatsAppTemplate,
 } from "@/lib/evolution";
 
 interface CRMViewProps {
   activeAgent: AgentProfile;
   agents: AgentProfile[];
   planItems: MarketingPlanItem[];
+  templates?: WhatsAppTemplate[];
   onPlanUpdated: (nextItems: MarketingPlanItem[]) => void;
   onGoToPlan: () => void;
+  onGoToTemplates?: () => void;
 }
 
 export function CRMView({
   activeAgent,
   agents,
   planItems,
+  templates,
   onPlanUpdated,
   onGoToPlan,
+  onGoToTemplates,
 }: CRMViewProps) {
   // Filtro: "mine" (Solo mis contactos) vs "all" (Todos los del equipo)
   const [ownerFilter, setOwnerFilter] = useState<"mine" | "all">("mine");
@@ -222,23 +228,37 @@ export function CRMView({
     <div className="flex flex-col flex-1 overflow-hidden">
       {/* SUB-HEADER CRM: FILTRO MIS CONTACTOS vs TODOS + CONEXIÓN WHATSAPP + NUEVO */}
       <div className="px-3.5 pt-2.5 pb-2.5 bg-white dark:bg-zinc-900 border-b border-zinc-200/80 dark:border-zinc-800 space-y-2">
-        {/* FILA 1: ESTADO WHATSAPP + BOTÓN NUEVO CONTACTO */}
-        <div className="flex items-center justify-between gap-2">
-          <button
-            type="button"
-            onClick={() => setWhapiSettingsOpen(true)}
-            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-medium border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/70 text-zinc-700 dark:text-zinc-200 hover:border-emerald-500/50 transition-all"
-          >
-            <QrCode className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-            <span>
-              {whapiConnected ? "WhatsApp Conectado" : "Vincular WhatsApp"}
-            </span>
-            <span
-              className={`h-2 w-2 rounded-full ${
-                whapiConnected ? "bg-emerald-500" : "bg-amber-400"
-              }`}
-            />
-          </button>
+        {/* FILA 1: ESTADO WHATSAPP + PLANTILLAS + BOTÓN NUEVO CONTACTO */}
+        <div className="flex items-center justify-between gap-1.5">
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setWhapiSettingsOpen(true)}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/70 text-zinc-700 dark:text-zinc-200 hover:border-emerald-500/50 transition-all"
+            >
+              <QrCode className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+              <span>
+                {whapiConnected ? "WA Conectado" : "Vincular WA"}
+              </span>
+              <span
+                className={`h-2 w-2 rounded-full ${
+                  whapiConnected ? "bg-emerald-500" : "bg-amber-400"
+                }`}
+              />
+            </button>
+
+            {onGoToTemplates && (
+              <button
+                type="button"
+                onClick={onGoToTemplates}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/70 text-zinc-700 dark:text-zinc-200 hover:border-emerald-500/50 transition-all"
+                title="Modificar plantillas de WhatsApp"
+              >
+                <FileEdit className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                <span>Plantillas</span>
+              </button>
+            )}
+          </div>
 
           <Button
             type="button"
@@ -573,6 +593,8 @@ export function CRMView({
       <WhatsAppPreviewModal
         contact={previewContact}
         activeAgent={activeAgent}
+        templates={templates}
+        onEditTemplates={onGoToTemplates}
         onClose={() => setPreviewContact(null)}
         onSentSuccess={handleSentSuccess}
       />

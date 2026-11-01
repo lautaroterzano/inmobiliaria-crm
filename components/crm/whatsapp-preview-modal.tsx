@@ -10,20 +10,24 @@ import {
   X,
   AlertCircle,
   AlertTriangle,
+  Settings2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { AgentProfile, CRMContact } from "@/lib/supabase";
 import {
   getDefaultTemplateForStage,
+  getDefaultTemplatesList,
   normalizePhoneForWhatsApp,
   renderWhatsAppTemplate,
-  WHATSAPP_TEMPLATES,
   type TemplateType,
+  type WhatsAppTemplate,
 } from "@/lib/evolution";
 
 interface WhatsAppPreviewModalProps {
   contact: CRMContact | null;
   activeAgent: AgentProfile;
+  templates?: WhatsAppTemplate[];
+  onEditTemplates?: () => void;
   onClose: () => void;
   onSentSuccess: (contactId: string, sentAt: string) => void;
 }
@@ -31,9 +35,14 @@ interface WhatsAppPreviewModalProps {
 export function WhatsAppPreviewModal({
   contact,
   activeAgent,
+  templates,
+  onEditTemplates,
   onClose,
   onSentSuccess,
 }: WhatsAppPreviewModalProps) {
+  const activeTemplates =
+    templates && templates.length > 0 ? templates : getDefaultTemplatesList();
+
   const [templateType, setTemplateType] =
     useState<TemplateType>("seller_tasacion");
   const [messageText, setMessageText] = useState("");
@@ -45,16 +54,22 @@ export function WhatsAppPreviewModal({
     if (contact) {
       const defaultTpl = getDefaultTemplateForStage(
         contact.type,
-        contact.stage
+        contact.stage,
+        activeTemplates
       );
       setTemplateType(defaultTpl);
       setMessageText(
-        renderWhatsAppTemplate(defaultTpl, contact.name, activeAgent.name)
+        renderWhatsAppTemplate(
+          defaultTpl,
+          contact.name,
+          activeAgent.name,
+          activeTemplates
+        )
       );
       setErrorMsg(null);
       setSentOk(false);
     }
-  }, [contact, activeAgent.name]);
+  }, [contact, activeAgent.name, activeTemplates]);
 
   if (!contact) return null;
 
@@ -63,7 +78,12 @@ export function WhatsAppPreviewModal({
   const handleTemplateSelect = (nextTpl: TemplateType) => {
     setTemplateType(nextTpl);
     setMessageText(
-      renderWhatsAppTemplate(nextTpl, contact.name, activeAgent.name)
+      renderWhatsAppTemplate(
+        nextTpl,
+        contact.name,
+        activeAgent.name,
+        activeTemplates
+      )
     );
     setErrorMsg(null);
   };
@@ -117,8 +137,6 @@ export function WhatsAppPreviewModal({
     onClose();
   };
 
-  const templatesList = Object.values(WHATSAPP_TEMPLATES);
-
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-xs p-0 sm:p-4">
       <div className="w-full max-w-md rounded-t-3xl sm:rounded-3xl bg-white dark:bg-zinc-900 border-t sm:border border-zinc-200 dark:border-zinc-800 p-5 shadow-2xl">
@@ -166,9 +184,24 @@ export function WhatsAppPreviewModal({
 
         <div className="mt-4 space-y-3.5">
           <div>
-            <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-              Plantilla sugerida ({activeAgent.name} • CABA)
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                Plantilla sugerida ({activeAgent.name} • CABA)
+              </label>
+              {onEditTemplates && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onEditTemplates();
+                  }}
+                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 hover:underline"
+                >
+                  <Settings2 className="h-3 w-3" />
+                  <span>Modificar plantillas</span>
+                </button>
+              )}
+            </div>
             <select
               value={templateType}
               onChange={(e) =>
@@ -176,7 +209,7 @@ export function WhatsAppPreviewModal({
               }
               className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-xs font-medium text-zinc-900 dark:text-white focus:border-emerald-500 focus:outline-none"
             >
-              {templatesList.map((tpl) => (
+              {activeTemplates.map((tpl) => (
                 <option key={tpl.id} value={tpl.id}>
                   {tpl.label}
                 </option>

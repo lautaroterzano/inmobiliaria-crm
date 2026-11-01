@@ -781,3 +781,99 @@ export async function addAssistantMessageToPlan(params: {
   await saveMarketingPlan(params.agentId, nextItems);
   return nextItems;
 }
+
+
+// ============================================================================
+// PLANTILLAS DE WHATSAPP EDITABLES (SINCRONIZADAS EN SUPABASE + LOCAL)
+// ============================================================================
+
+import {
+  getDefaultTemplatesList,
+  type WhatsAppTemplate,
+} from "./evolution";
+
+const LOCAL_TEMPLATES_PREFIX = "fiore_whatsapp_templates_v1_";
+
+export async function loadWhatsAppTemplates(
+  agentId: string
+): Promise<WhatsAppTemplate[]> {
+  const storageKey = `${LOCAL_TEMPLATES_PREFIX}${agentId}`;
+  const dbRowId = `__whatsapp_templates_${agentId}__`;
+  const defaults = getDefaultTemplatesList();
+
+  if (supabase) {
+    const { data, error } = await supabase
+      .from("fiore_messages")
+      .select("content")
+      .eq("id", dbRowId)
+      .maybeSingle();
+
+    if (!error && data?.content) {
+      try {
+        const parsed = JSON.parse(data.content) as WhatsAppTemplate[];
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          if (typeof window !== "undefined") {
+            localStorage.setItem(storageKey, JSON.stringify(parsed));
+          }
+          return parsed;
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  if (typeof window !== "undefined") {
+    try {
+      const cached = localStorage.getItem(storageKey);
+      if (cached) {
+        const parsed = JSON.parse(cached) as WhatsAppTemplate[];
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      } else {
+        localStorage.setItem(storageKey, JSON.stringify(defaults));
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  return defaults;
+}
+
+export async function saveWhatsAppTemplates(
+  agentId: string,
+  templates: WhatsAppTemplate[]
+): Promise<void> {
+  const storageKey = `${LOCAL_TEMPLATES_PREFIX}${agentId}`;
+  const dbRowId = `__whatsapp_templates_${agentId}__`;
+
+  if (typeof window !== "undefined") {
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(templates));
+    } catch {
+      // ignore
+    }
+  }
+
+  if (supabase) {
+    await supabase.from("fiore_messages").upsert(
+      {
+        id: dbRowId,
+        session_id: `__templates_${agentId}__`,
+        role: "assistant",
+        content: JSON.stringify(templates),
+      },
+      { onConflict: "id" }
+    );
+  }
+}
+
+export async function resetWhatsAppTemplatesToDefault(
+  agentId: string
+): Promise<WhatsAppTemplate[]> {
+  const defaults = getDefaultTemplatesList();
+  await saveWhatsAppTemplates(agentId, defaults);
+  return defaults;
+}

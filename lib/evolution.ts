@@ -18,7 +18,7 @@ export type BuyerStage =
 
 export type ContactStage = SellerStage | BuyerStage;
 
-export type TemplateType =
+export type DefaultTemplateType =
   | "seller_tasacion"
   | "seller_captado"
   | "seller_promocion"
@@ -26,15 +26,18 @@ export type TemplateType =
   | "buyer_seguimiento"
   | "buyer_negociacion";
 
+export type TemplateType = DefaultTemplateType | (string & {});
+
 export interface WhatsAppTemplate {
   id: TemplateType;
   label: string;
   forType: ContactType;
   recommendedStage: ContactStage;
   body: string;
+  isCustom?: boolean;
 }
 
-export const WHATSAPP_TEMPLATES: Record<TemplateType, WhatsAppTemplate> = {
+export const WHATSAPP_TEMPLATES: Record<DefaultTemplateType, WhatsAppTemplate> = {
   seller_tasacion: {
     id: "seller_tasacion",
     label: "Vendedor • Coordinar Tasación",
@@ -79,10 +82,22 @@ export const WHATSAPP_TEMPLATES: Record<TemplateType, WhatsAppTemplate> = {
   },
 };
 
+export function getDefaultTemplatesList(): WhatsAppTemplate[] {
+  return Object.values(WHATSAPP_TEMPLATES).map((tpl) => ({ ...tpl }));
+}
+
 export function getDefaultTemplateForStage(
   type: ContactType,
-  stage: ContactStage
+  stage: ContactStage,
+  templates?: WhatsAppTemplate[]
 ): TemplateType {
+  if (templates && templates.length > 0) {
+    const exactMatch = templates.find(
+      (t) => t.forType === type && t.recommendedStage === stage
+    );
+    if (exactMatch) return exactMatch.id;
+  }
+
   if (type === "seller") {
     if (stage === "captado") return "seller_captado";
     if (stage === "en_promocion") return "seller_promocion";
@@ -94,18 +109,30 @@ export function getDefaultTemplateForStage(
   }
 }
 
-export function renderWhatsAppTemplate(
-  templateType: TemplateType,
+export function renderWhatsAppTemplateBody(
+  body: string,
   contactName: string,
   agentName = "Fiorella"
 ): string {
-  const tpl =
-    WHATSAPP_TEMPLATES[templateType] || WHATSAPP_TEMPLATES.buyer_seguimiento;
   const firstName = contactName.trim().split(" ")[0] || contactName.trim();
   const cleanAgent = agentName.trim() || "Fiorella";
-  return tpl.body
+  return body
     .replace(/\{\{name\}\}/g, firstName)
     .replace(/\{\{agent\}\}/g, cleanAgent);
+}
+
+export function renderWhatsAppTemplate(
+  templateType: TemplateType,
+  contactName: string,
+  agentName = "Fiorella",
+  customTemplates?: WhatsAppTemplate[]
+): string {
+  const foundCustom = customTemplates?.find((t) => t.id === templateType);
+  const tpl =
+    foundCustom ||
+    WHATSAPP_TEMPLATES[templateType as DefaultTemplateType] ||
+    WHATSAPP_TEMPLATES.buyer_seguimiento;
+  return renderWhatsAppTemplateBody(tpl.body, contactName, agentName);
 }
 
 /**

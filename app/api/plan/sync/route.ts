@@ -52,7 +52,7 @@ Respondé ÚNICAMENTE con un JSON válido (un array de objetos, sin bloques mark
 `;
 
     const { text } = await generateText({
-      model: google('gemini-flash-latest'),
+      model: google('gemini-flash-lite-latest'),
       prompt,
     });
 

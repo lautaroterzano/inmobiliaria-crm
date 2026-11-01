@@ -66,7 +66,7 @@ export async function POST(req: Request) {
   });
 
   const result = streamText({
-    model: google('gemini-flash-latest'),
+    model: google('gemini-flash-lite-latest'),
     system: buildSystemPrompt(agentName || 'Fiorella', sellerContext),
     messages: formattedMessages,
   });
