@@ -3,11 +3,13 @@
 import React, { useEffect, useState } from "react";
 import {
   AlertTriangle,
+  Building2,
   CalendarCheck2,
   CalendarPlus,
   Clock,
   ExternalLink,
   FileEdit,
+  Link as LinkIcon,
   MessageSquareShare,
   Phone,
   Plus,
@@ -27,6 +29,7 @@ import { NewContactModal } from "@/components/crm/new-contact-modal";
 import { WhatsAppPreviewModal } from "@/components/crm/whatsapp-preview-modal";
 import { WhapiSettingsModal } from "@/components/crm/whapi-settings-modal";
 import {
+  assignPropertyToContact,
   createCRMContact,
   deleteCRMContact,
   loadCRMContacts,
@@ -36,6 +39,7 @@ import {
   type AgentProfile,
   type CRMContact,
   type MarketingPlanItem,
+  type PropertyItem,
 } from "@/lib/supabase";
 import {
   normalizePhoneForWhatsApp,
@@ -48,20 +52,26 @@ interface CRMViewProps {
   activeAgent: AgentProfile;
   agents: AgentProfile[];
   planItems: MarketingPlanItem[];
+  properties?: PropertyItem[];
+  onPropertiesChange?: (next: PropertyItem[]) => void;
   templates?: WhatsAppTemplate[];
   onPlanUpdated: (nextItems: MarketingPlanItem[]) => void;
   onGoToPlan: () => void;
   onGoToTemplates?: () => void;
+  onGoToProperties?: () => void;
 }
 
 export function CRMView({
   activeAgent,
   agents,
   planItems,
+  properties = [],
+  onPropertiesChange,
   templates,
   onPlanUpdated,
   onGoToPlan,
   onGoToTemplates,
+  onGoToProperties,
 }: CRMViewProps) {
   // Filtro: "mine" (Solo mis contactos) vs "all" (Todos los del equipo)
   const [ownerFilter, setOwnerFilter] = useState<"mine" | "all">("all");
@@ -115,6 +125,7 @@ export function CRMView({
     type: ContactType;
     stage: ContactStage;
     notes?: string;
+    propertyId?: string | null;
   }) => {
     const created = await createCRMContact({
       ...input,
@@ -124,6 +135,16 @@ export function CRMView({
     setContacts((prev) => [created, ...prev]);
     setActiveFunnel(created.type);
     setRecentlyChangedId(created.id);
+
+    if (input.propertyId) {
+      const nextProps = await assignPropertyToContact({
+        contactId: created.id,
+        contactType: created.type,
+        propertyId: input.propertyId,
+        replaceExistingForContact: true,
+      });
+      onPropertiesChange?.(nextProps);
+    }
   };
 
   const handleStageChange = async (
@@ -576,6 +597,103 @@ export function CRMView({
                     )}
                   </div>
                 )}
+
+                {/* ASIGNACIÓN DE PROPIEDAD Y DISTINCIÓN VISUAL */}
+                {(() => {
+                  const assignedProp = properties.find((p) =>
+                    contact.type === "seller"
+                      ? p.seller_contact_id === contact.id
+                      : p.buyer_contact_id === contact.id
+                  );
+
+                  return (
+                    <div className="pt-1 border-t border-zinc-100 dark:border-zinc-800">
+                      {assignedProp ? (
+                        <div className="rounded-xl p-2.5 bg-emerald-500/10 dark:bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div className="h-7 w-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center flex-shrink-0">
+                              <Building2 className="h-3.5 w-3.5" />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
+                                  Propiedad Asignada
+                                </span>
+                                <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-600/20 text-emerald-800 dark:text-emerald-200 font-semibold">
+                                  {assignedProp.property_type}
+                                </span>
+                              </div>
+                              <p className="text-xs font-bold text-zinc-900 dark:text-white truncate">
+                                {assignedProp.address}
+                              </p>
+                              <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                                {assignedProp.price ? assignedProp.price : "Precio s/d"} {assignedProp.expenses ? `• Exp: ${assignedProp.expenses}` : ""}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                            {onGoToProperties && (
+                              <button
+                                type="button"
+                                onClick={onGoToProperties}
+                                className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 underline"
+                              >
+                                Ver ficha →
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                const next = await assignPropertyToContact({
+                                  contactId: contact.id,
+                                  contactType: contact.type,
+                                  propertyId: null,
+                                });
+                                onPropertiesChange?.(next);
+                              }}
+                              className="text-[10px] text-zinc-400 hover:text-rose-500"
+                            >
+                              Desvincular
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between gap-2 py-1 px-1">
+                          <span className="text-[11px] text-zinc-400 flex items-center gap-1">
+                            <Building2 className="h-3 w-3" />
+                            <span>Sin propiedad asignada</span>
+                          </span>
+
+                          <div className="flex items-center gap-1.5">
+                            <select
+                              defaultValue=""
+                              onChange={async (e) => {
+                                const val = e.target.value;
+                                if (!val) return;
+                                const next = await assignPropertyToContact({
+                                  contactId: contact.id,
+                                  contactType: contact.type,
+                                  propertyId: val,
+                                  replaceExistingForContact: true,
+                                });
+                                onPropertiesChange?.(next);
+                              }}
+                              className="text-[11px] font-medium rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2 py-1 text-zinc-700 dark:text-zinc-300 focus:border-emerald-500 focus:outline-none"
+                            >
+                              <option value="">+ Asignar Propiedad</option>
+                              {properties.map((p) => (
+                                <option key={p.id} value={p.id}>
+                                  {p.address} ({p.property_type})
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             );
           })
@@ -586,6 +704,7 @@ export function CRMView({
       <NewContactModal
         open={newContactOpen}
         defaultType={activeFunnel}
+        properties={properties}
         onClose={() => setNewContactOpen(false)}
         onCreate={handleCreateContact}
       />

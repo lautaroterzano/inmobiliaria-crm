@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { X, UserPlus } from "lucide-react";
+import { X, UserPlus, Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DEFAULT_STAGE_BY_TYPE,
@@ -12,10 +12,12 @@ import {
   type ContactStage,
   type ContactType,
 } from "@/lib/whapi";
+import type { PropertyItem } from "@/lib/supabase";
 
 interface NewContactModalProps {
   open: boolean;
   defaultType: ContactType;
+  properties?: PropertyItem[];
   onClose: () => void;
   onCreate: (data: {
     name: string;
@@ -23,12 +25,14 @@ interface NewContactModalProps {
     type: ContactType;
     stage: ContactStage;
     notes?: string;
+    propertyId?: string | null;
   }) => Promise<void>;
 }
 
 export function NewContactModal({
   open,
   defaultType,
+  properties = [],
   onClose,
   onCreate,
 }: NewContactModalProps) {
@@ -39,6 +43,7 @@ export function NewContactModal({
     DEFAULT_STAGE_BY_TYPE[defaultType]
   );
   const [notes, setNotes] = useState("");
+  const [selectedPropertyId, setSelectedPropertyId] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -48,6 +53,7 @@ export function NewContactModal({
       setName("");
       setPhone("54911");
       setNotes("");
+      setSelectedPropertyId("");
     }
   }, [open, defaultType]);
 
@@ -72,6 +78,7 @@ export function NewContactModal({
         type,
         stage,
         notes: notes.trim() || undefined,
+        propertyId: selectedPropertyId || null,
       });
       onClose();
     } finally {
@@ -191,6 +198,27 @@ export function NewContactModal({
               className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/80 px-3 py-2 text-sm text-zinc-900 dark:text-white focus:border-emerald-500 focus:outline-none resize-none"
             />
           </div>
+
+          {/* Asignar Propiedad opcionalmente desde el alta del contacto */}
+          {properties.length > 0 && (
+            <div>
+              <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                Asignar Propiedad {type === "seller" ? "(En venta)" : "(De interés)"}
+              </label>
+              <select
+                value={selectedPropertyId}
+                onChange={(e) => setSelectedPropertyId(e.target.value)}
+                className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/80 px-3 py-2.5 text-sm text-zinc-900 dark:text-white focus:border-emerald-500 focus:outline-none"
+              >
+                <option value="">-- Sin propiedad asignada por ahora --</option>
+                {properties.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.address} ({p.property_type} - {p.price || "s/d"})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div className="flex items-center gap-2 pt-2">
             <Button

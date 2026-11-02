@@ -13,6 +13,160 @@ export const supabase = isSupabaseConfigured
   ? createClient(supabaseUrl, supabaseAnonKey)
   : null;
 
+/**
+ * Clave única de fiore_messages en modo multi-inmobiliaria (ver supabase/tenants.sql).
+ * El agency_id lo completa Postgres automáticamente con la inmobiliaria del usuario logueado.
+ */
+const MESSAGES_CONFLICT_KEY = "agency_id,id";
+
+// ============================================================================
+// INMOBILIARIAS (TENANTS) + CÓDIGO DE INVITACIÓN
+// ============================================================================
+
+export interface Agency {
+  id: string;
+  name: string;
+  invite_code: string;
+  created_at?: string;
+}
+
+export interface AgencyMember {
+  user_id: string;
+  agency_id: string;
+  role: "owner" | "agent";
+  display_name: string | null;
+  email: string | null;
+  created_at?: string;
+}
+
+function rpcErrorMessage(err: { message?: string } | null, fallback: string) {
+  const msg = err?.message || fallback;
+  if (msg.includes("Could not find the function") || msg.includes("does not exist")) {
+    return "Falta ejecutar supabase/tenants.sql en el SQL Editor de Supabase.";
+  }
+  return msg;
+}
+
+/** Devuelve la inmobiliaria del usuario logueado (o null si todavía no pertenece a ninguna). */
+export async function getMyAgency(
+  userId: string
+): Promise<{ agency: Agency | null; member: AgencyMember | null; error?: string }> {
+  if (!supabase) return { agency: null, member: null };
+
+  const { data: member, error: memberErr } = await supabase
+    .from("agency_members")
+    .select("user_id, agency_id, role, display_name, email, created_at")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (memberErr) {
+    return {
+      agency: null,
+      member: null,
+      error: rpcErrorMessage(memberErr, "No se pudo leer tu inmobiliaria"),
+    };
+  }
+  if (!member) return { agency: null, member: null };
+
+  const { data: agency, error: agencyErr } = await supabase
+    .from("agencies")
+    .select("id, name, invite_code, created_at")
+    .eq("id", member.agency_id)
+    .maybeSingle();
+
+  if (agencyErr || !agency) {
+    return {
+      agency: null,
+      member: member as AgencyMember,
+      error: rpcErrorMessage(agencyErr, "No se pudo leer tu inmobiliaria"),
+    };
+  }
+
+  return { agency: agency as Agency, member: member as AgencyMember };
+}
+
+export async function createAgency(
+  name: string,
+  displayName: string
+): Promise<Agency> {
+  if (!supabase) throw new Error("Supabase no está configurado.");
+  const { data, error } = await supabase.rpc("create_agency", {
+    p_name: name,
+    p_display_name: displayName,
+  });
+  if (error || !data) {
+    throw new Error(rpcErrorMessage(error, "No se pudo crear la inmobiliaria"));
+  }
+  return data as Agency;
+}
+
+export async function joinAgency(
+  code: string,
+  displayName: string
+): Promise<Agency> {
+  if (!supabase) throw new Error("Supabase no está configurado.");
+  const { data, error } = await supabase.rpc("join_agency", {
+    p_code: code.trim().toUpperCase(),
+    p_display_name: displayName,
+  });
+  if (error || !data) {
+    throw new Error(rpcErrorMessage(error, "No se pudo unir a la inmobiliaria"));
+  }
+  return data as Agency;
+}
+
+export async function listAgencyMembers(): Promise<AgencyMember[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from("agency_members")
+    .select("user_id, agency_id, role, display_name, email, created_at")
+    .order("created_at", { ascending: true });
+  if (error || !data) return [];
+  return data as AgencyMember[];
+}
+
+export async function regenerateInviteCode(): Promise<string> {
+  if (!supabase) throw new Error("Supabase no está configurado.");
+  const { data, error } = await supabase.rpc("regenerate_invite_code");
+  if (error || !data) {
+    throw new Error(rpcErrorMessage(error, "No se pudo regenerar el código"));
+  }
+  return data as string;
+}
+
+export async function removeAgencyMember(userId: string): Promise<void> {
+  if (!supabase) throw new Error("Supabase no está configurado.");
+  const { error } = await supabase.rpc("remove_agency_member", {
+    p_user_id: userId,
+  });
+  if (error) {
+    throw new Error(rpcErrorMessage(error, "No se pudo quitar al miembro"));
+  }
+}
+
+/** Headers con el token de sesión para llamar a las rutas /api protegidas. */
+export async function getAuthHeaders(): Promise<Record<string, string>> {
+  if (!supabase) return {};
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+/** Borra cachés locales (contactos, planes, chats) para que no queden datos de otra cuenta en el dispositivo. */
+export function clearLocalCaches(): void {
+  if (typeof window === "undefined") return;
+  try {
+    const keys: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith("fiore_")) keys.push(k);
+    }
+    keys.forEach((k) => localStorage.removeItem(k));
+  } catch {
+    // ignore
+  }
+}
+
 export type AgentColor = "emerald" | "violet" | "blue" | "amber" | "rose";
 
 export interface AgentProfile {
@@ -158,12 +312,15 @@ export async function loadAgents(): Promise<AgentProfile[]> {
         // ignore
       }
     } else if (!error && !data) {
-      await supabase.from("fiore_messages").upsert({
-        id: "__agents_registry_v1__",
-        session_id: "__system_registry__",
-        role: "assistant",
-        content: JSON.stringify(localList),
-      });
+      await supabase.from("fiore_messages").upsert(
+        {
+          id: "__agents_registry_v1__",
+          session_id: "__system_registry__",
+          role: "assistant",
+          content: JSON.stringify(localList),
+        },
+        { onConflict: MESSAGES_CONFLICT_KEY }
+      );
     }
   }
 
@@ -183,7 +340,7 @@ export async function saveAgentsList(agents: AgentProfile[]): Promise<void> {
         role: "assistant",
         content: JSON.stringify(agents),
       },
-      { onConflict: "id" }
+      { onConflict: MESSAGES_CONFLICT_KEY }
     );
   }
 }
@@ -245,7 +402,7 @@ export async function saveMessage(msg: StoredMessage): Promise<void> {
         role: msg.role,
         content: msg.content,
       },
-      { onConflict: "id" }
+      { onConflict: MESSAGES_CONFLICT_KEY }
     );
   }
 }
@@ -656,7 +813,7 @@ export async function saveMarketingPlan(
         role: "assistant",
         content: JSON.stringify(items),
       },
-      { onConflict: "id" }
+      { onConflict: MESSAGES_CONFLICT_KEY }
     );
   }
 }
@@ -846,7 +1003,7 @@ export async function saveWhatsAppTemplates(
         role: "assistant",
         content: JSON.stringify(templates),
       },
-      { onConflict: "id" }
+      { onConflict: MESSAGES_CONFLICT_KEY }
     );
   }
 }
@@ -857,4 +1014,220 @@ export async function resetWhatsAppTemplatesToDefault(
   const defaults = getDefaultTemplatesList();
   await saveWhatsAppTemplates(agentId, defaults);
   return defaults;
+}
+
+// ============================================================================
+// MÓDULO DE PROPIEDADES (SINCRONIZADO CON CRM VENDEDORES Y COMPRADORES)
+// ============================================================================
+
+export type PropertyType =
+  | "Departamento"
+  | "PH"
+  | "Casa"
+  | "Local"
+  | "Oficina"
+  | "Terreno"
+  | "Cochera"
+  | "Otro";
+
+export const PROPERTY_TYPES: PropertyType[] = [
+  "Departamento",
+  "PH",
+  "Casa",
+  "Local",
+  "Oficina",
+  "Terreno",
+  "Cochera",
+  "Otro",
+];
+
+export interface PropertyItem {
+  id: string;
+  address: string;
+  price: string;
+  expenses: string;
+  property_type: PropertyType;
+  seller_contact_id: string | null;
+  buyer_contact_id: string | null;
+  agent_id: string;
+  agent_name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+const LOCAL_PROPERTIES_KEY = "fiore_crm_properties_v1";
+const DB_PROPERTIES_ROW_ID = "__properties_registry_v1__";
+
+function getLocalProperties(): PropertyItem[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(LOCAL_PROPERTIES_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as PropertyItem[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function setLocalProperties(properties: PropertyItem[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(LOCAL_PROPERTIES_KEY, JSON.stringify(properties));
+  } catch {
+    // ignore
+  }
+}
+
+export async function loadProperties(): Promise<PropertyItem[]> {
+  if (supabase) {
+    const { data, error } = await supabase
+      .from("fiore_messages")
+      .select("content")
+      .eq("id", DB_PROPERTIES_ROW_ID)
+      .maybeSingle();
+
+    if (!error && data?.content) {
+      try {
+        const parsed = JSON.parse(data.content) as PropertyItem[];
+        if (Array.isArray(parsed)) {
+          setLocalProperties(parsed);
+          return parsed;
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  return getLocalProperties();
+}
+
+export async function savePropertiesList(
+  properties: PropertyItem[]
+): Promise<void> {
+  setLocalProperties(properties);
+
+  if (supabase) {
+    await supabase.from("fiore_messages").upsert(
+      {
+        id: DB_PROPERTIES_ROW_ID,
+        session_id: "__properties_registry__",
+        role: "assistant",
+        content: JSON.stringify(properties),
+      },
+      { onConflict: MESSAGES_CONFLICT_KEY }
+    );
+  }
+}
+
+export async function createProperty(input: {
+  address: string;
+  price: string;
+  expenses: string;
+  property_type: PropertyType;
+  seller_contact_id?: string | null;
+  buyer_contact_id?: string | null;
+  agent_id: string;
+  agent_name: string;
+}): Promise<{ property: PropertyItem; allProperties: PropertyItem[] }> {
+  const nowIso = new Date().toISOString();
+  const newProp: PropertyItem = {
+    id:
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `prop-${Date.now()}`,
+    address: input.address.trim(),
+    price: input.price.trim(),
+    expenses: input.expenses.trim(),
+    property_type: input.property_type,
+    seller_contact_id: input.seller_contact_id || null,
+    buyer_contact_id: input.buyer_contact_id || null,
+    agent_id: input.agent_id,
+    agent_name: input.agent_name,
+    created_at: nowIso,
+    updated_at: nowIso,
+  };
+
+  const current = await loadProperties();
+  const next = [newProp, ...current];
+  await savePropertiesList(next);
+  return { property: newProp, allProperties: next };
+}
+
+export async function updateProperty(
+  propertyId: string,
+  updates: Partial<
+    Pick<
+      PropertyItem,
+      | "address"
+      | "price"
+      | "expenses"
+      | "property_type"
+      | "seller_contact_id"
+      | "buyer_contact_id"
+    >
+  >
+): Promise<PropertyItem[]> {
+  const current = await loadProperties();
+  const nowIso = new Date().toISOString();
+  const next = current.map((p) =>
+    p.id === propertyId
+      ? {
+          ...p,
+          ...updates,
+          updated_at: nowIso,
+        }
+      : p
+  );
+  await savePropertiesList(next);
+  return next;
+}
+
+export async function deleteProperty(
+  propertyId: string
+): Promise<PropertyItem[]> {
+  const current = await loadProperties();
+  const next = current.filter((p) => p.id !== propertyId);
+  await savePropertiesList(next);
+  return next;
+}
+
+/**
+ * Asigna o desasigna una propiedad a un contacto (Vendedor o Comprador).
+ */
+export async function assignPropertyToContact(params: {
+  contactId: string;
+  contactType: ContactType;
+  propertyId: string | null;
+  replaceExistingForContact?: boolean;
+}): Promise<PropertyItem[]> {
+  const current = await loadProperties();
+  const nowIso = new Date().toISOString();
+  const roleField =
+    params.contactType === "seller" ? "seller_contact_id" : "buyer_contact_id";
+
+  const next = current.map((prop) => {
+    if (params.propertyId === prop.id) {
+      return {
+        ...prop,
+        [roleField]: params.contactId,
+        updated_at: nowIso,
+      };
+    }
+    if (
+      (params.propertyId === null || params.replaceExistingForContact) &&
+      prop[roleField] === params.contactId
+    ) {
+      return {
+        ...prop,
+        [roleField]: null,
+        updated_at: nowIso,
+      };
+    }
+    return prop;
+  });
+
+  await savePropertiesList(next);
+  return next;
 }

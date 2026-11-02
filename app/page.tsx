@@ -17,11 +17,13 @@ import {
   CalendarCheck2,
   CalendarPlus,
   FileEdit,
+  Building2,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MarkdownRenderer } from "@/components/markdown-renderer";
 import { CRMView } from "@/components/crm/crm-view";
+import { PropertiesView } from "@/components/properties/properties-view";
 import { MarketingPlanView } from "@/components/plan/marketing-plan-view";
 import { WhatsAppTemplatesView } from "@/components/templates/whatsapp-templates-view";
 import { AuthScreen } from "@/components/auth-screen";
@@ -31,6 +33,7 @@ import {
   loadCRMContacts,
   loadMarketingPlan,
   loadMessages,
+  loadProperties,
   loadWhatsAppTemplates,
   saveMessage,
   supabase,
@@ -38,6 +41,7 @@ import {
   type AgentProfile,
   type CRMContact,
   type MarketingPlanItem,
+  type PropertyItem,
 } from "@/lib/supabase";
 import {
   getDefaultTemplatesList,
@@ -51,7 +55,7 @@ export interface ChatMessage {
   images?: string[];
 }
 
-type MainSection = "copilot" | "plan" | "crm" | "templates";
+type MainSection = "copilot" | "plan" | "properties" | "crm" | "templates";
 
 interface QuickAction {
   emoji: string;
@@ -173,7 +177,9 @@ export default function FioreCopilotPage() {
 
   // Estado compartido de Plan de Marketing, Vendedores CRM y Plantillas de WhatsApp
   const [planItems, setPlanItems] = useState<MarketingPlanItem[]>([]);
+  const [allContacts, setAllContacts] = useState<CRMContact[]>([]);
   const [sellerContacts, setSellerContacts] = useState<CRMContact[]>([]);
+  const [properties, setProperties] = useState<PropertyItem[]>([]);
   const [whatsappTemplates, setWhatsappTemplates] = useState<
     WhatsAppTemplate[]
   >(() => getDefaultTemplatesList());
@@ -225,12 +231,13 @@ export default function FioreCopilotPage() {
     let mounted = true;
     setHistoryLoaded(false);
     async function initAgentData() {
-      const [savedMsgs, allContacts, currentPlan, savedTemplates] =
+      const [savedMsgs, loadedContacts, currentPlan, savedTemplates, loadedProperties] =
         await Promise.all([
           loadMessages(sessionId),
           loadCRMContacts(),
           loadMarketingPlan(activeAgent!.id),
           loadWhatsAppTemplates(activeAgent!.id),
+          loadProperties(),
         ]);
 
       if (!mounted) return;
@@ -243,9 +250,11 @@ export default function FioreCopilotPage() {
         }))
       );
 
+      setAllContacts(loadedContacts);
+      setProperties(loadedProperties);
       setWhatsappTemplates(savedTemplates);
 
-      const mySellers = allContacts.filter(
+      const mySellers = loadedContacts.filter(
         (c) => c.type === "seller" && c.agent_id === activeAgent!.id
       );
       setSellerContacts(mySellers);
@@ -911,29 +920,44 @@ export default function FioreCopilotPage() {
         />
       )}
 
-      {/* SECCIÓN 3: MINI CRM MULTI-AGENTE */}
+      {/* SECCIÓN 3: PROPIEDADES */}
+      {activeSection === "properties" && (
+        <PropertiesView
+          activeAgent={activeAgent}
+          contacts={allContacts}
+          properties={properties}
+          onPropertiesChange={setProperties}
+          onGoToCRM={() => setActiveSection("crm")}
+        />
+      )}
+
+      {/* SECCIÓN 4: MINI CRM MULTI-AGENTE */}
       {activeSection === "crm" && (
         <CRMView
           activeAgent={activeAgent}
           agents={[activeAgent]}
           planItems={planItems}
+          properties={properties}
+          onPropertiesChange={setProperties}
           templates={whatsappTemplates}
           onPlanUpdated={(nextItems) => {
             setPlanItems(nextItems);
-            loadCRMContacts().then((all) =>
+            loadCRMContacts().then((all) => {
+              setAllContacts(all);
               setSellerContacts(
                 all.filter(
                   (c) => c.type === "seller" && c.agent_id === activeAgent.id
                 )
-              )
-            );
+              );
+            });
           }}
           onGoToPlan={() => setActiveSection("plan")}
           onGoToTemplates={() => setActiveSection("templates")}
+          onGoToProperties={() => setActiveSection("properties")}
         />
       )}
 
-      {/* SECCIÓN 4: PLANTILLAS DE WHATSAPP EDITABLES */}
+      {/* SECCIÓN 5: PLANTILLAS DE WHATSAPP EDITABLES */}
       {activeSection === "templates" && (
         <WhatsAppTemplatesView
           activeAgent={activeAgent}
@@ -942,10 +966,10 @@ export default function FioreCopilotPage() {
         />
       )}
 
-      {/* 3. BARRA DE NAVEGACIÓN INFERIOR FIJA (4 SECCIONES: ASISTENTE | PLAN | CRM | PLANTILLAS) */}
+      {/* 3. BARRA DE NAVEGACIÓN INFERIOR FIJA (5 SECCIONES: ASISTENTE | PLAN | PROPIEDADES | CRM | PLANTILLAS) */}
       <nav
         aria-label="Navegación principal"
-        className="z-20 grid grid-cols-4 bg-white dark:bg-zinc-900 border-t border-zinc-200/90 dark:border-zinc-800 px-2 py-1.5 gap-1"
+        className="z-20 grid grid-cols-5 bg-white dark:bg-zinc-900 border-t border-zinc-200/90 dark:border-zinc-800 px-1 py-1.5 gap-0.5"
       >
         <button
           type="button"
@@ -956,8 +980,8 @@ export default function FioreCopilotPage() {
               : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200 font-medium"
           }`}
         >
-          <MessageSquareText className="h-5 w-5" />
-          <span className="text-[11px] mt-0.5">💬 Asistente</span>
+          <MessageSquareText className="h-4 w-4" />
+          <span className="text-[10px] mt-0.5 truncate">Asistente</span>
         </button>
 
         <button
@@ -970,14 +994,27 @@ export default function FioreCopilotPage() {
           }`}
         >
           <div className="relative">
-            <CalendarCheck2 className="h-5 w-5" />
+            <CalendarCheck2 className="h-4 w-4" />
             {pendingPlanCount > 0 && (
-              <span className="absolute -top-1.5 -right-2.5 px-1 min-w-[16px] h-4 rounded-full bg-emerald-600 text-white text-[10px] font-bold flex items-center justify-center">
+              <span className="absolute -top-1.5 -right-2.5 px-1 min-w-[15px] h-3.5 rounded-full bg-emerald-600 text-white text-[9px] font-bold flex items-center justify-center">
                 {pendingPlanCount}
               </span>
             )}
           </div>
-          <span className="text-[11px] mt-0.5">📅 Plan</span>
+          <span className="text-[10px] mt-0.5 truncate">Plan</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveSection("properties")}
+          className={`relative flex flex-col items-center justify-center py-1.5 rounded-xl transition-all ${
+            activeSection === "properties"
+              ? "text-emerald-600 dark:text-emerald-400 bg-emerald-50/70 dark:bg-emerald-950/30 font-bold"
+              : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200 font-medium"
+          }`}
+        >
+          <Building2 className="h-4 w-4" />
+          <span className="text-[10px] mt-0.5 truncate">Propiedades</span>
         </button>
 
         <button
@@ -989,8 +1026,8 @@ export default function FioreCopilotPage() {
               : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200 font-medium"
           }`}
         >
-          <Users className="h-5 w-5" />
-          <span className="text-[11px] mt-0.5">👥 CRM</span>
+          <Users className="h-4 w-4" />
+          <span className="text-[10px] mt-0.5 truncate">CRM</span>
         </button>
 
         <button
@@ -1002,8 +1039,8 @@ export default function FioreCopilotPage() {
               : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200 font-medium"
           }`}
         >
-          <FileEdit className="h-5 w-5" />
-          <span className="text-[11px] mt-0.5">📝 Plantillas</span>
+          <FileEdit className="h-4 w-4" />
+          <span className="text-[10px] mt-0.5 truncate">Plantillas</span>
         </button>
       </nav>
     </div>
