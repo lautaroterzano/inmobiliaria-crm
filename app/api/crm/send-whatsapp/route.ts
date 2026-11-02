@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import {
+  getSupabaseForRequest,
+  isServerSupabaseConfigured,
+} from "@/lib/supabase-server";
 import {
   renderWhatsAppTemplate,
   sendEvolutionTextMessage,
@@ -8,6 +11,16 @@ import {
 
 export async function POST(req: Request) {
   try {
+    // Solo usuarios logueados pueden enviar WhatsApp; las consultas respetan RLS (su inmobiliaria)
+    const auth = await getSupabaseForRequest(req);
+    if (isServerSupabaseConfigured && !auth) {
+      return NextResponse.json(
+        { ok: false, error: "No autorizado. Volvé a iniciar sesión." },
+        { status: 401 }
+      );
+    }
+    const supabase = auth?.client ?? null;
+
     const body = await req.json();
     const {
       contactId,
@@ -38,7 +51,7 @@ export async function POST(req: Request) {
         .from("contacts")
         .select("id, name, phone")
         .eq("id", contactId)
-        .single();
+        .maybeSingle();
 
       if (contact) {
         contactPhone = contact.phone;

@@ -27,9 +27,13 @@ import { PropertiesView } from "@/components/properties/properties-view";
 import { MarketingPlanView } from "@/components/plan/marketing-plan-view";
 import { WhatsAppTemplatesView } from "@/components/templates/whatsapp-templates-view";
 import { AuthScreen } from "@/components/auth-screen";
+import { AgencyOnboarding } from "@/components/agency/agency-onboarding";
+import { AgencyTeamModal } from "@/components/agency/agency-team-modal";
 import {
   addAssistantMessageToPlan,
+  clearLocalCaches,
   clearSessionMessages,
+  getMyAgency,
   loadCRMContacts,
   loadMarketingPlan,
   loadMessages,
@@ -39,6 +43,8 @@ import {
   supabase,
   syncSellerContactToMarketingPlan,
   type AgentProfile,
+  type Agency,
+  type AgencyMember,
   type CRMContact,
   type MarketingPlanItem,
   type PropertyItem,
@@ -167,6 +173,16 @@ export default function FioreCopilotPage() {
   const [activeAgent, setActiveAgent] = useState<AgentProfile | null>(null);
   const [activeSection, setActiveSection] = useState<MainSection>("copilot");
 
+  // Multi-inmobiliaria (tenant): el usuario solo ve datos de la inmobiliaria a la que pertenece
+  const [authUser, setAuthUser] = useState<{ id: string; email?: string } | null>(
+    null
+  );
+  const [agency, setAgency] = useState<Agency | null>(null);
+  const [agencyMember, setAgencyMember] = useState<AgencyMember | null>(null);
+  const [agencyLoadedFor, setAgencyLoadedFor] = useState<string | null>(null);
+  const [agencyError, setAgencyError] = useState<string | null>(null);
+  const [teamModalOpen, setTeamModalOpen] = useState(false);
+
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [attachedImages, setAttachedImages] = useState<string[]>([]);
@@ -199,8 +215,10 @@ export default function FioreCopilotPage() {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
         setActiveAgent(buildAgentFromSupabaseUser(session.user));
+        setAuthUser({ id: session.user.id, email: session.user.email });
       } else {
         setActiveAgent(null);
+        setAuthUser(null);
       }
       setAuthChecking(false);
     });
@@ -210,8 +228,10 @@ export default function FioreCopilotPage() {
     } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
         setActiveAgent(buildAgentFromSupabaseUser(session.user));
+        setAuthUser({ id: session.user.id, email: session.user.email });
       } else {
         setActiveAgent(null);
+        setAuthUser(null);
       }
       setAuthChecking(false);
     });
@@ -221,13 +241,37 @@ export default function FioreCopilotPage() {
     };
   }, []);
 
+  // Resolver la inmobiliaria (tenant) del usuario logueado
+  const authUserId = authUser?.id ?? null;
+  useEffect(() => {
+    if (!supabase || !authUserId) {
+      setAgency(null);
+      setAgencyMember(null);
+      return;
+    }
+    let mounted = true;
+    getMyAgency(authUserId).then(({ agency: a, member, error }) => {
+      if (!mounted) return;
+      setAgency(a);
+      setAgencyMember(member);
+      setAgencyError(error || null);
+      setAgencyLoadedFor(authUserId);
+    });
+    return () => {
+      mounted = false;
+    };
+  }, [authUserId]);
+
+  // Sin Supabase (modo local) no hay tenants; con Supabase hace falta pertenecer a una inmobiliaria
+  const tenantReady = !supabase || Boolean(agency);
+
   const sessionId = activeAgent
     ? `fiorella-caba-${activeAgent.id}`
     : "fiorella-caba-anon";
 
   // Cargar historial de chat, contactos vendedores, Plan de Marketing y Plantillas de WhatsApp
   useEffect(() => {
-    if (!activeAgent) return;
+    if (!activeAgent || !tenantReady) return;
     let mounted = true;
     setHistoryLoaded(false);
     async function initAgentData() {
@@ -281,13 +325,18 @@ export default function FioreCopilotPage() {
     return () => {
       mounted = false;
     };
-  }, [sessionId, activeAgent]);
+  }, [sessionId, activeAgent, tenantReady, agency?.id]);
 
   const handleLogout = async () => {
     if (supabase) {
       await supabase.auth.signOut();
     }
+    clearLocalCaches();
+    setAgency(null);
+    setAgencyMember(null);
+    setTeamModalOpen(false);
     setActiveAgent(null);
+    setAuthUser(null);
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -576,6 +625,34 @@ export default function FioreCopilotPage() {
     return <AuthScreen />;
   }
 
+  if (supabase && authUserId && agencyLoadedFor !== authUserId) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[100dvh] max-w-md mx-auto bg-slate-50 dark:bg-zinc-950">
+        <Loader2 className="h-7 w-7 animate-spin text-emerald-600 mb-2" />
+        <p className="text-xs text-zinc-500">Cargando tu inmobiliaria...</p>
+      </div>
+    );
+  }
+
+  if (!tenantReady) {
+    return (
+      <AgencyOnboarding
+        displayName={activeAgent.name}
+        email={authUser?.email}
+        initialError={agencyError}
+        onReady={(a) => {
+          clearLocalCaches();
+          setAgencyError(null);
+          setAgency(a);
+          if (authUserId) {
+            getMyAgency(authUserId).then(({ member }) => setAgencyMember(member));
+          }
+        }}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
   const pendingPlanCount = planItems.filter(
     (i) => i.status !== "publicado"
   ).length;
@@ -609,14 +686,27 @@ export default function FioreCopilotPage() {
         </div>
 
         <div className="flex items-center gap-1.5">
-          <div className="inline-flex items-center gap-2 pl-1.5 pr-2.5 py-1 rounded-full border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800">
+          <button
+            type="button"
+            onClick={() => agency && setTeamModalOpen(true)}
+            disabled={!agency}
+            title={agency ? `${agency.name} • Ver equipo y código de invitación` : undefined}
+            className="inline-flex items-center gap-2 pl-1.5 pr-2.5 py-1 rounded-full border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 hover:border-emerald-500/50 transition-all disabled:cursor-default"
+          >
             <span className="h-6 w-6 rounded-full bg-emerald-600 text-white text-[10px] font-bold flex items-center justify-center">
               {activeAgent.name.slice(0, 2).toUpperCase()}
             </span>
-            <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-100 max-w-[90px] truncate">
-              {activeAgent.name}
+            <span className="flex flex-col items-start leading-tight">
+              <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-100 max-w-[90px] truncate">
+                {activeAgent.name}
+              </span>
+              {agency && (
+                <span className="text-[10px] text-zinc-500 max-w-[90px] truncate">
+                  {agency.name}
+                </span>
+              )}
             </span>
-          </div>
+          </button>
 
           {activeSection === "copilot" && messages.length > 0 && (
             <Button
@@ -1043,6 +1133,17 @@ export default function FioreCopilotPage() {
           <span className="text-[10px] mt-0.5 truncate">Plantillas</span>
         </button>
       </nav>
+
+      {agency && authUserId && (
+        <AgencyTeamModal
+          open={teamModalOpen}
+          agency={agency}
+          currentUserId={authUserId}
+          isOwner={agencyMember?.role === "owner"}
+          onAgencyChange={setAgency}
+          onClose={() => setTeamModalOpen(false)}
+        />
+      )}
     </div>
   );
 }

@@ -13,7 +13,7 @@ import {
   Settings2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { AgentProfile, CRMContact } from "@/lib/supabase";
+import { getAuthHeaders, type AgentProfile, type CRMContact } from "@/lib/supabase";
 import {
   getDefaultTemplateForStage,
   getDefaultTemplatesList,
@@ -96,7 +96,10 @@ export function WhatsAppPreviewModal({
     try {
       const res = await fetch("/api/crm/send-whatsapp", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(await getAuthHeaders()),
+        },
         body: JSON.stringify({
           contactId: contact.id,
           templateType,
