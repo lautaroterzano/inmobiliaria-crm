@@ -2,18 +2,14 @@
 
 import React, { useEffect, useState } from "react";
 import {
-  CheckCircle2,
   ExternalLink,
-  Loader2,
   MessageSquare,
-  Send,
   X,
-  AlertCircle,
   AlertTriangle,
   Settings2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { getAuthHeaders, type AgentProfile, type CRMContact } from "@/lib/supabase";
+import type { AgentProfile, CRMContact } from "@/lib/supabase";
 import {
   getDefaultTemplateForStage,
   getDefaultTemplatesList,
@@ -46,9 +42,6 @@ export function WhatsAppPreviewModal({
   const [templateType, setTemplateType] =
     useState<TemplateType>("seller_tasacion");
   const [messageText, setMessageText] = useState("");
-  const [sending, setSending] = useState(false);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [sentOk, setSentOk] = useState(false);
 
   useEffect(() => {
     if (contact) {
@@ -66,8 +59,6 @@ export function WhatsAppPreviewModal({
           activeTemplates
         )
       );
-      setErrorMsg(null);
-      setSentOk(false);
     }
   }, [contact, activeAgent.name, activeTemplates]);
 
@@ -85,51 +76,6 @@ export function WhatsAppPreviewModal({
         activeTemplates
       )
     );
-    setErrorMsg(null);
-  };
-
-  const handleSendDirect = async () => {
-    if (!messageText.trim() || sending) return;
-    setSending(true);
-    setErrorMsg(null);
-
-    try {
-      const res = await fetch("/api/crm/send-whatsapp", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(await getAuthHeaders()),
-        },
-        body: JSON.stringify({
-          contactId: contact.id,
-          templateType,
-          customMessage: messageText.trim(),
-          phone: contact.phone,
-          name: contact.name,
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok || !data.ok) {
-        setErrorMsg(
-          data.error ||
-            "No se pudo enviar automáticamente. Probá con 'Abrir chat en WhatsApp App'."
-        );
-        return;
-      }
-
-      setSentOk(true);
-      onSentSuccess(contact.id, data.sentAt || new Date().toISOString());
-      setTimeout(() => {
-        onClose();
-      }, 1100);
-    } catch (err) {
-      setErrorMsg(
-        err instanceof Error ? err.message : "Error de red al enviar WhatsApp"
-      );
-    } finally {
-      setSending(false);
-    }
   };
 
   const handleOpenWaMe = () => {
@@ -153,7 +99,7 @@ export function WhatsAppPreviewModal({
                 Enviar WhatsApp a {contact.name}
               </h2>
               <p className="text-[11px] font-mono text-zinc-500">
-                +{normalizePhoneForWhatsApp(contact.phone)} • Firma:{" "}
+                +{normalizePhoneForWhatsApp(contact.phone)} • Remitente:{" "}
                 <strong className="text-emerald-600 dark:text-emerald-400">
                   {activeAgent.name}
                 </strong>
@@ -169,27 +115,22 @@ export function WhatsAppPreviewModal({
           </button>
         </div>
 
-        {/* ALERTA VISUAL SI EL CONTACTO PERTENECE A OTRA AGENTE */}
         {isForeignContact && (
-          <div className="mt-3 flex items-start gap-2 rounded-xl bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-700 p-3 text-xs text-amber-900 dark:text-amber-200">
-            <AlertTriangle className="h-4 w-4 flex-shrink-0 text-amber-600 mt-0.5" />
-            <div>
-              <strong className="font-bold block">
-                ¡Ojo! Este contacto es de {contact.agent_name}
-              </strong>
-              <span>
-                Estás por escribirle desde tu perfil ({activeAgent.name}) a un
-                contacto asignado a {contact.agent_name}.
-              </span>
-            </div>
+          <div className="mt-3 flex items-start gap-2 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 p-2.5 text-xs text-amber-800 dark:text-amber-200">
+            <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5 text-amber-600" />
+            <span>
+              <strong>Atención:</strong> Este contacto fue cargado por{" "}
+              <strong>{contact.agent_name}</strong>. Al enviar, saldrá desde tu
+              propio WhatsApp ({activeAgent.name}).
+            </span>
           </div>
         )}
 
         <div className="mt-4 space-y-3.5">
           <div>
             <div className="flex items-center justify-between mb-1">
-              <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                Plantilla sugerida ({activeAgent.name} • CABA)
+              <label className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                Plantilla sugerida
               </label>
               {onEditTemplates && (
                 <button
@@ -223,10 +164,10 @@ export function WhatsAppPreviewModal({
           <div>
             <div className="flex items-center justify-between mb-1">
               <label className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                Vista previa editable antes de disparar
+                Mensaje personalizado
               </label>
               <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
-                Podés editar el texto
+                Podés editar antes de abrir
               </span>
             </div>
             <textarea
@@ -237,50 +178,19 @@ export function WhatsAppPreviewModal({
             />
           </div>
 
-          {errorMsg && (
-            <div className="flex items-start gap-2 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 p-3 text-xs text-amber-800 dark:text-amber-300">
-              <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
-              <span>{errorMsg}</span>
-            </div>
-          )}
-
-          {sentOk && (
-            <div className="flex items-center gap-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 p-3 text-xs font-medium text-emerald-700 dark:text-emerald-300">
-              <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
-              <span>¡WhatsApp enviado directamente desde el CRM!</span>
-            </div>
-          )}
-
-          <div className="flex flex-col gap-2 pt-1">
+          <div className="pt-1">
             <Button
               type="button"
-              onClick={handleSendDirect}
-              disabled={sending || sentOk || !messageText.trim()}
-              className="w-full h-11 rounded-xl font-semibold"
-            >
-              {sending ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>Enviando WhatsApp...</span>
-                </>
-              ) : (
-                <>
-                  <Send className="h-4 w-4" />
-                  <span>Enviar WhatsApp directo (sin abrir la App)</span>
-                </>
-              )}
-            </Button>
-
-            <Button
-              type="button"
-              variant="outline"
               onClick={handleOpenWaMe}
               disabled={!messageText.trim()}
-              className="w-full h-9 rounded-xl text-xs"
+              className="w-full h-11 rounded-xl font-semibold gap-2 bg-emerald-600 hover:bg-emerald-500 text-white"
             >
-              <ExternalLink className="h-3.5 w-3.5" />
-              <span>Abrir chat en WhatsApp App (wa.me)</span>
+              <ExternalLink className="h-4 w-4" />
+              <span>Abrir en mi WhatsApp personal</span>
             </Button>
+            <p className="text-[11px] text-center text-zinc-500 dark:text-zinc-400 mt-2">
+              Se abrirá tu WhatsApp con el mensaje listo para enviar.
+            </p>
           </div>
         </div>
       </div>

@@ -100,13 +100,7 @@ export function CRMView({
         setLoading(false);
       }
 
-      try {
-        const res = await fetch("/api/crm/whapi-status");
-        const statusData = await res.json();
-        if (mounted) setWhapiConnected(Boolean(statusData?.connected));
-      } catch {
-        // ignore
-      }
+
     }
     init();
     return () => {
@@ -718,11 +712,7 @@ export function CRMView({
         onSentSuccess={handleSentSuccess}
       />
 
-      <WhapiSettingsModal
-        open={whapiSettingsOpen}
-        onStatusChange={setWhapiConnected}
-        onClose={() => setWhapiSettingsOpen(false)}
-      />
+
     </div>
   );
 }
