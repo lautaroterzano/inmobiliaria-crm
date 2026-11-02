@@ -8,10 +8,10 @@ import {
   getStagesForType,
 } from "@/components/crm/crm-config";
 import {
-  normalizePhoneForWhapi,
+  normalizePhoneForWhatsApp,
   type ContactStage,
   type ContactType,
-} from "@/lib/whapi";
+} from "@/lib/evolution";
 import type { PropertyItem } from "@/lib/supabase";
 
 interface NewContactModalProps {
@@ -74,7 +74,7 @@ export function NewContactModal({
     try {
       await onCreate({
         name: name.trim(),
-        phone: normalizePhoneForWhapi(phone),
+        phone: normalizePhoneForWhatsApp(phone),
         type,
         stage,
         notes: notes.trim() || undefined,

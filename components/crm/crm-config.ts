@@ -1,4 +1,4 @@
-import type { BuyerStage, ContactStage, ContactType, SellerStage } from "@/lib/whapi";
+import type { BuyerStage, ContactStage, ContactType, SellerStage } from "@/lib/evolution";
 
 export interface StageDefinition {
   id: ContactStage;

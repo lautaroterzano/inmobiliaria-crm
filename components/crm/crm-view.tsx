@@ -13,7 +13,6 @@ import {
   MessageSquareShare,
   Phone,
   Plus,
-  QrCode,
   Sparkles,
   Trash2,
   UserCheck,
@@ -27,7 +26,6 @@ import {
 import { getAgentColorClasses } from "@/components/crm/agent-switcher-modal";
 import { NewContactModal } from "@/components/crm/new-contact-modal";
 import { WhatsAppPreviewModal } from "@/components/crm/whatsapp-preview-modal";
-import { WhapiSettingsModal } from "@/components/crm/whapi-settings-modal";
 import {
   assignPropertyToContact,
   createCRMContact,
@@ -88,8 +86,6 @@ export function CRMView({
   // Modales
   const [newContactOpen, setNewContactOpen] = useState(false);
   const [previewContact, setPreviewContact] = useState<CRMContact | null>(null);
-  const [whapiSettingsOpen, setWhapiSettingsOpen] = useState(false);
-  const [whapiConnected, setWhapiConnected] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -246,22 +242,6 @@ export function CRMView({
         {/* FILA 1: ESTADO WHATSAPP + PLANTILLAS + BOTÓN NUEVO CONTACTO */}
         <div className="flex items-center justify-between gap-1.5">
           <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => setWhapiSettingsOpen(true)}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/70 text-zinc-700 dark:text-zinc-200 hover:border-emerald-500/50 transition-all"
-            >
-              <QrCode className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-              <span>
-                {whapiConnected ? "WA Conectado" : "Vincular WA"}
-              </span>
-              <span
-                className={`h-2 w-2 rounded-full ${
-                  whapiConnected ? "bg-emerald-500" : "bg-amber-400"
-                }`}
-              />
-            </button>
-
             {onGoToTemplates && (
               <button
                 type="button"

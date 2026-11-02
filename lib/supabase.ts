@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import type { ContactStage, ContactType } from "./whapi";
+import type { ContactStage, ContactType } from "./evolution";
 
 const rawSupabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const supabaseUrl = rawSupabaseUrl
